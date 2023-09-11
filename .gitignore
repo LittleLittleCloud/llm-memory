@@ -1,0 +1,15 @@
+# .gitignore file for Python projects
+# Covers most common project files and folders
+
+.DS_Store
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+*.so
+*.egg
+*.egg-info
+dist
+build
+docs/_build
+.idea
