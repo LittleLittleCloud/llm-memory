@@ -1,26 +1,41 @@
 import fastapi as api
 from typing import Annotated
 from fastapi.security import OAuth2PasswordBearer, OAuth2AuthorizationCodeBearer, OAuth2PasswordRequestForm
-from model.document import Document
+from model.document import Document, PlainTextDocument
+import sys
 from model.user import User
 from fastapi import FastAPI, File, UploadFile
-from .di import STORAGE, INDEX
+from di import initialize_di_for_app
+
+SETTINGS, STORAGE, EMBEDDING, INDEX = initialize_di_for_app()
 
 oauth2_scheme  = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 app = api.FastAPI()
-
+users = [
+    User(
+        user_name='bigmiao',
+        email="g2260578356@gmail.com",
+        documents=[],
+        full_name="g2260578356",
+        disabled=False)
+]
 async def get_current_user(token: str = api.Depends(oauth2_scheme)):
     '''
     Get current user
     '''
-    return User(user_name=token, email="g2260578356@gmail.com", full_name="g2260578356", disabled=False)
+    for user in users:
+        if user.user_name == token:
+            return user
+    
+    raise api.HTTPException(status_code=401, detail="Invalid authentication credentials")
+
 
 @app.post("/api/v1/auth/token")
 async def login(form_data: Annotated[OAuth2PasswordRequestForm, api.Depends()]):
     '''
     Login to get a token
     '''
-    return {"access_token": form_data.username + "token"}
+    return {"access_token": form_data.username}
 
 @app.post("/api/v1/uploadfile/")
 async def create_upload_file(user: Annotated[User, api.Depends(get_current_user)], file: UploadFile = api.File(...)) -> Document:
@@ -28,8 +43,20 @@ async def create_upload_file(user: Annotated[User, api.Depends(get_current_user)
     Upload a file
     '''
     fileUrl = f'{user.user_name}-{file.filename}'
-    await STORAGE.save(fileUrl, await file.read())
-    return Document(name=file.filename, status='uploading', url=fileUrl)
+    STORAGE.save(fileUrl, await file.read())
+
+    # create plainTextDocument if the file is a text file
+    if file.filename.endswith('.txt'):
+        return PlainTextDocument(
+            name=file.filename,
+            status='uploading',
+            url=fileUrl,
+            embedding=EMBEDDING,
+            storage=STORAGE,
+        )
+    else:
+        raise api.HTTPException(status_code=400, detail="File type not supported")
+        
 
 ### /api/v1/.well-known
 #### Get /openapi.json
@@ -59,20 +86,25 @@ async def upload_document(user: Annotated[User, api.Depends(get_current_user)], 
     Upload a document
     '''
     document.status = 'processing'
-    INDEX.load_or_update_document(document)
+    INDEX.load_or_update_document(user, document)
     document.status = 'done'
     user.documents.append(document)
 
 #### Get /delete
 # Delete a document
 @app.get("/api/v1/document/delete")
-async def delete_document(user: Annotated[User, api.Depends(get_current_user)], document: Document):
+async def delete_document(user: Annotated[User, api.Depends(get_current_user)], document_name: str):
     '''
     Delete a document
     '''
-    await STORAGE.delete(document.url)
-    INDEX.remove_document(document)
-    user.documents.remove(document)
+    for doc in user.documents:
+        if doc.name == document_name:
+            STORAGE.delete(doc.url)
+            INDEX.remove_document(user, doc)
+            user.documents.remove(doc)
+            return
+    
+    raise api.HTTPException(status_code=404, detail="Document not found")
 
 ### /api/v1/query
 #### Get query={query}&top_k={top_k}&threshold={threshold}
@@ -82,7 +114,7 @@ async def query_index(user: Annotated[User, api.Depends(get_current_user)], quer
     '''
     Query the index
     '''
-    return INDEX.query_index(query, top_k, threshold)
+    return INDEX.query_index(user, query, top_k, threshold)
 
 #### Get query={query}&top_k={top_k}&threshold={threshold}&document={document}
 # Query the document
@@ -94,8 +126,19 @@ async def query_document(user: Annotated[User, api.Depends(get_current_user)], q
 
     # find the document
     for doc in user.documents:
+        print(doc.name)
         if doc.name == document_name:
-            return INDEX.query_document(doc, query, top_k, threshold)
+            return INDEX.query_document(user, doc, query, top_k, threshold)
 
     raise api.HTTPException(status_code=404, detail="Document not found")
 
+def receive_signal(signalNumber, frame):
+    print('Received:', signalNumber)
+    sys.exit()
+
+
+@app.on_event("startup")
+async def startup_event():
+    import signal
+    signal.signal(signal.SIGINT, receive_signal)
+    # startup tasks

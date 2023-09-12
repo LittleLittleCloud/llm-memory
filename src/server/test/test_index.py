@@ -5,16 +5,18 @@ from ..model.user import User
 from qdrant_client import QdrantClient
 
 def test_qdrant_vector_store():
+    user= User(
+        user_name='test_user',
+        email='test@gmail.com',
+        full_name='test user',
+        disabled=False,
+    )
+    
     index = QDrantVectorStore(
         embedding=EMBEDDING,
         client= QdrantClient(
             url=SETTING.qdrant_url,
             api_key=SETTING.qdrant_api_key,),
-        user=User(
-            user_name='test_user',
-            email='test@gmail.com',
-            full_name='test user',
-            disabled=False,),
         collection_name='test_collection',
     )
 
@@ -30,12 +32,12 @@ def test_qdrant_vector_store():
         url='contoso q&a.txt',
     )
 
-    index.load_or_update_document(contoso_qa)
+    index.load_or_update_document(user, contoso_qa)
 
-    assert index.contains(contoso_qa) == True
+    assert index.contains(user, contoso_qa) == True
 
     # test query document
-    records = index.query_document(contoso_qa, 'return policy', 1)
+    records = index.query_document(user, contoso_qa, 'return policy', 1)
     records = list(records)
     assert len(records) == 1
     assert records[0].content.startswith('Return policies')
@@ -44,7 +46,7 @@ def test_qdrant_vector_store():
     assert records[0].meta_data['embedding_type'] == EMBEDDING.type
 
     # test query index
-    records = index.query_index('return policy', 1)
+    records = index.query_index(user, 'return policy', 1)
     records = list(records)
     assert len(records) == 1
     assert records[0].content.startswith('Return policies')
@@ -53,7 +55,7 @@ def test_qdrant_vector_store():
     assert records[0].meta_data['embedding_type'] == EMBEDDING.type
 
     # test remove document
-    index.remove_document(contoso_qa)
-    assert index.contains(contoso_qa) == False
+    index.remove_document(user, contoso_qa)
+    assert index.contains(user, contoso_qa) == False
 
 

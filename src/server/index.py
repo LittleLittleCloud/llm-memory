@@ -1,31 +1,29 @@
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import ScoredPoint
 
-from .embedding import Embedding
-from .model.document import Document
-from .model.record import Record
-from .model.user import User
+from embedding import Embedding
+from model.document import Document
+from model.record import Record
+from model.user import User
 from qdrant_client.http import models
 import uuid
-import json
 
 class Index:
-    user: User
     type: str
 
-    def load_or_update_document(self, document: Document):
+    def load_or_update_document(self, user: User, document: Document):
         pass
 
-    def remove_document(self, document: Document):
+    def remove_document(self, user: User, document: Document):
         pass
     
-    def query_index(self, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
+    def query_index(self, user: User, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
         pass
 
-    def query_document(self, document: Document, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
+    def query_document(self, user: User, document: Document, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
         pass
 
-    def contains(self, document: Document) -> bool:
+    def contains(self, user: User, document: Document) -> bool:
         pass
 
 class QDrantVectorStore(Index):
@@ -37,11 +35,9 @@ class QDrantVectorStore(Index):
 
     def __init__(
             self,
-            user: User,
             client: QdrantClient,
             embedding: Embedding,
             collection_name: str):
-        self.user = user
         self._embedding = embedding
         self.collection_name = collection_name
         self._client = client
@@ -76,14 +72,15 @@ class QDrantVectorStore(Index):
         if not self.if_collection_exists():
             self.create_collection()
 
-    def load_or_update_document(self, document: Document):
+    def load_or_update_document(self, user: User, document: Document):
         self.create_collection_if_not_exists()
 
-        if self.contains(document):
-            self.remove_document(document)
+        if self.contains(user, document):
+            self.remove_document(user, document)
 
-        group_id = self.user.user_name
+        group_id = user.user_name
         # upsert records in batch
+        print(document)
         records = document.load_records()
         records = list(records)
         for i in range(0, len(records), self.batch_size):
@@ -106,7 +103,7 @@ class QDrantVectorStore(Index):
                 ),
             )
     
-    def remove_document(self, document: Document):
+    def remove_document(self, user: User, document: Document):
         if not self.if_collection_exists():
             return
         
@@ -123,7 +120,7 @@ class QDrantVectorStore(Index):
                         models.FieldCondition(
                             key="group_id",
                             match=models.MatchValue(
-                            value=self.user.user_name,
+                            value=user.user_name,
                             ),
                         )
                     ]
@@ -131,9 +128,9 @@ class QDrantVectorStore(Index):
             )
         )
 
-    def contains(self, document: Document) -> bool:
+    def contains(self, user: User, document: Document) -> bool:
         document_id = document.name
-        group_id = self.user.user_name
+        group_id = user.user_name
 
         count = self._client.count(
             collection_name=self.collection_name,
@@ -156,7 +153,7 @@ class QDrantVectorStore(Index):
 
         return count.count > 0
 
-    def query_index(self, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
+    def query_index(self, user: User, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
         if not self.if_collection_exists():
             return []
         
@@ -169,7 +166,7 @@ class QDrantVectorStore(Index):
                     models.FieldCondition(
                         key="group_id",
                         match=models.MatchValue(
-                        value=self.user.user_name,
+                        value=user.user_name,
                         ),
                     )
                 ]
@@ -179,7 +176,7 @@ class QDrantVectorStore(Index):
 
         return self._response_to_records(response)
     
-    def query_document(self, document: Document, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
+    def query_document(self, user: User, document: Document, query: str, top_k: int = 10, threshold: float = 0.5) -> list[Record]:
         if not self.if_collection_exists():
             return []
         
@@ -195,7 +192,7 @@ class QDrantVectorStore(Index):
                     ),
                     models.FieldCondition(
                         key="group_id",
-                        match=models.MatchValue(value=self.user.user_name),
+                        match=models.MatchValue(value=user.user_name),
                     )
                 ]
             ),

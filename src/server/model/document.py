@@ -1,9 +1,8 @@
 from pydantic import BaseModel
 from .record import Record
-from ..storage import Storage
-from ..embedding import Embedding
+from storage import Storage
+from embedding import Embedding
 import time
-from typing import ClassVar
 
 class Document(BaseModel):
     name: str
