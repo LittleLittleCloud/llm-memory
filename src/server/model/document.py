@@ -1,7 +1,9 @@
 from pydantic import BaseModel
 from .record import Record
-from ..di import STORAGE, EMBEDDING
+from ..storage import Storage
+from ..embedding import Embedding
 import time
+from typing import ClassVar
 
 class Document(BaseModel):
     name: str
@@ -9,17 +11,32 @@ class Document(BaseModel):
     status: str = 'uploading' # uploading, processing, done, failed
     url: str | None = None
 
+    _embedding: Embedding
+    _storage: Storage
+
     def load_records(self) -> list[Record]:
         pass
 
 class PlainTextDocument(Document):
+    def __init__(
+            self,
+            embedding: Embedding,
+            storage: Storage,
+            **kwargs):
+        super().__init__(**kwargs)
+        self._embedding = embedding
+        self._storage = storage
+
     def load_records(self) -> list[Record]:
-        bytes = STORAGE.load(self.url)
+        bytes = self._storage.load(self.url)
         lines = bytes.decode('utf-8').split('\n')
 
         for i, line in enumerate(lines):
-            embedding = EMBEDDING.generate_embedding(line)
-            embedding_type = EMBEDDING.type
+            # remove empty lines
+            if len(line.strip()) == 0:
+                continue
+            embedding = self._embedding.generate_embedding(line)
+            embedding_type = self._embedding.type
             meta_data = {
                 'embedding_type': embedding_type,
                 'document_id': self.name,
